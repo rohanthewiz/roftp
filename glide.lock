@@ -1,0 +1,8 @@
+hash: 184ecfb9c1dba62a637eec32cd80b7ec1a37dbbaa83a04c09dd52bd0327b8170
+updated: 2017-08-09T04:22:12.714541063-05:00
+imports:
+- name: github.com/jlaffaye/ftp
+  version: 769512c448b98e9efa243279a7e281248332aa98
+- name: github.com/rohanthewiz/serr
+  version: 13d16988896a1a1fc20fb4c720de920712dbbced
+testImports: []
