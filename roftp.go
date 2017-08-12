@@ -4,6 +4,7 @@ import (
 	"os"
 	"github.com/jlaffaye/ftp"
 	"github.com/rohanthewiz/serr"
+	"path/filepath"
 )
 
 type FTPOptions struct {
@@ -67,18 +68,22 @@ func ListFiles(conn *ftp.ServerConn, serverPath string) (filesData []FileData, e
 // Upload file to the server
 // conn should be already logged in and current directory changed to desired dir on server
 // ListFiles will change directory
-func UploadFile(conn *ftp.ServerConn, fullPath, serverPath string) error {
+func UploadFile(conn *ftp.ServerConn, fullPath, serverPath string, destOpt ...string) error {
 	file, err := os.Open(fullPath)
 	if err != nil {
 		return serr.Wrap(err, "Unable to open file for upload")
 	}
 	defer file.Close()
 
+	if len(destOpt) > 0 {
+		serverPath = filepath.Join(serverPath, destOpt[0])
+	}
+
 	// Upload
 	println("Uploading sermon:", fullPath)
 	err = conn.Stor(serverPath, file)
 	if err != nil {
-		return serr.Wrap(err, "Error uploading file")
+		return serr.Wrap(err, "Error uploading file", "actual_server_path", serverPath)
 	}
 
 	return err
