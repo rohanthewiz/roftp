@@ -5,6 +5,7 @@ import (
 	"github.com/jlaffaye/ftp"
 	"github.com/rohanthewiz/serr"
 	"path/filepath"
+	"gopkg.in/relistan/rubberneck.v1"
 )
 
 type FTPOptions struct {
@@ -23,6 +24,7 @@ type FileData struct {
 // and cache it locally
 func NewFTPConn(opts FTPOptions) (*ftp.ServerConn, error) {
 	println("Attempting ftp connection")
+	rubberneck.Print(opts)
 	conn, err := ftp.Connect(opts.Server + ":" + opts.Port)
 	if err != nil {
 		return nil, serr.Wrap(err, "Error connecting to FTP Server")
