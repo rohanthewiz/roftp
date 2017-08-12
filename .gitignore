@@ -1,3 +1,5 @@
 .idea/
 vendor/
 
+# Let's ignore glide.lock for packages
+glide.lock
