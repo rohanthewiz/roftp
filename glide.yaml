@@ -1,6 +1,0 @@
-package: github.com/rohanthewiz/roftp
-import:
-- package: github.com/rohanthewiz/serr
-  version: ~0.2.1
-- package: gopkg.in/relistan/rubberneck.v1
-  version: ~1.0.1

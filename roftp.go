@@ -24,29 +24,36 @@ type FileData struct {
 	Type string
 }
 
-// The first step in using the roftp package is to get a new logged in connection,
+// FTPConn wraps ftp.ServerConn so we don't have to expose the core lib
+type FTPConn struct {
+	Conn *ftp.ServerConn
+}
+
+// NewFTPConn The first step in using the roftp package is to get a new logged in connection,
 // and cache it locally
-func NewFTPConn(opts FTPOptions) (*ftp.ServerConn, error) {
+func NewFTPConn(opts FTPOptions) (fcon FTPConn, err error) {
 	if opts.Verbose {
 		println("Attempting ftp connection...")
 		fmt.Printf("**** FTP Options ->%#v\n", opts)
 	}
+
 	conn, err := ftp.Connect(opts.Server + ":" + opts.Port)
 	if err != nil {
-		return nil, rerr.Wrap(err, "Error connecting to FTP Server")
+		return fcon, rerr.Wrap(err, "Error connecting to FTP Server")
 	}
 	if opts.Verbose {
 		println("FTP basic connection established. We still need to login")
 	}
-	err = Login(conn, opts)
+
+	err = login(conn, opts)
 	if err != nil {
-		return nil, rerr.Wrap(err, "Error logging in to ftp server")
+		return fcon, rerr.Wrap(err, "Error logging in to ftp server")
 	}
-	return conn, nil
+	return FTPConn{Conn: conn}, nil
 }
 
-// Login on the supplied basic connection
-func Login(conn *ftp.ServerConn, opts FTPOptions) error {
+// login on the supplied basic connection
+func login(conn *ftp.ServerConn, opts FTPOptions) error {
 	if opts.Verbose {
 		println("Attempting to Login...")
 	}
@@ -56,18 +63,22 @@ func Login(conn *ftp.ServerConn, opts FTPOptions) error {
 // Change to the serverPath directory and List files
 // Provide an already logged in connection
 // ListFiles will change directory to the listed directory
-func ListFiles(conn *ftp.ServerConn, serverPath string) (filesData []FileData, err error) {
-	currPath, err := ChDir(conn, serverPath)
+func ListFiles(fcon FTPConn, serverPath string) (filesData []FileData, err error) {
+	if fcon.Conn == nil {
+		return filesData, rerr.New("Provided ftp connection is invalid. Did you use the NewFTPConn() function?")
+	}
+
+	currPath, err := ChDir(fcon, serverPath)
 	if err != nil {
 		return filesData, rerr.Wrap(err, "Unable to change current dir")
 	}
 	println("Current path:", currPath)
 
-	entries, err := conn.List("")
+	entries, err := fcon.Conn.List("")
 	if err != nil {
 		return nil, rerr.Wrap(err, "Error listing files", "currentDir", currPath)
 	}
-	println(len(entries), "file(s) found at", currPath)
+	println(len(entries), "item(s) found at", currPath)
 	for _, entry := range entries {
 		fileType := "other"
 		switch entry.Type {
@@ -82,11 +93,14 @@ func ListFiles(conn *ftp.ServerConn, serverPath string) (filesData []FileData, e
 }
 
 // Change directory and return the new path or err
-func ChDir(conn *ftp.ServerConn, serverPath string) (currPath string, err error) {
-	if err = conn.ChangeDir(serverPath); err != nil {
+func ChDir(fcon FTPConn, serverPath string) (currPath string, err error) {
+	if fcon.Conn == nil {
+		return currPath, rerr.New("Provided ftp connection is invalid. Did you use the NewFTPConn() function?")
+	}
+	if err = fcon.Conn.ChangeDir(serverPath); err != nil {
 		return currPath, rerr.Wrap(err, "Error changing directory on ftp server", "requestedPath", serverPath)
 	}
-	currPath, err = conn.CurrentDir()
+	currPath, err = fcon.Conn.CurrentDir()
 	if err != nil {
 		return currPath, rerr.Wrap(err, "Unable to obtain server's current directory after changing directory")
 	}
@@ -96,7 +110,10 @@ func ChDir(conn *ftp.ServerConn, serverPath string) (currPath string, err error)
 // Upload file to the server
 // conn should be already logged in and current directory changed to desired dir on server
 // Server path is dest path (without filename) on server
-func UploadFile(conn *ftp.ServerConn, srcFullPath, serverPath string, destFilename ...string) error {
+func UploadFile(fcon FTPConn, srcFullPath, serverPath string, destFilename ...string) error {
+	if fcon.Conn == nil {
+		return rerr.New("Provided ftp connection is invalid. Did you use the NewFTPConn() function?")
+	}
 	file, err := os.Open(srcFullPath)
 	if err != nil {
 		return rerr.Wrap(err, "Unable to open file for upload")
@@ -108,19 +125,23 @@ func UploadFile(conn *ftp.ServerConn, srcFullPath, serverPath string, destFilena
 	if len(destFilename) > 0 {
 		serverPath = filepath.Join(serverPath, destFilename[0])
 	}
+
 	// Upload
 	println("Uploading:", srcFullPath) // TODO Show srcFullPath ==> serverPath + destFilename
-	err = conn.Stor(serverPath, file)
+	err = fcon.Conn.Stor(serverPath, file)
 	if err != nil {
-		return rerr.Wrap(err, "Error uploading file", "actual_server_path", serverPath)
+		return rerr.Wrap(err, "Error uploading file", "srcFile", srcFullPath, "actual_server_path", serverPath)
 	}
 	println("Upload of", srcFullPath, "completed")
 	return err
 }
 
 // Download and write file from server
-func DownloadFiles(conn *ftp.ServerConn, serverPath string, limit ...int) (success int, fail int, err error) {
-	items, err := ListFiles(conn, serverPath)
+func DownloadFiles(fcon FTPConn, serverPath string, limit ...int) (success int, fail int, err error) {
+	if fcon.Conn == nil {
+		return success, fail, rerr.New("Provided ftp connection is invalid. Did you use the NewFTPConn() function?")
+	}
+	items, err := ListFiles(fcon, serverPath)
 	if err != nil {
 		return 0, 0, rerr.Wrap(err, "Could not obtain dir entries by name")
 	}
@@ -138,7 +159,7 @@ func DownloadFiles(conn *ftp.ServerConn, serverPath string, limit ...int) (succe
 			continue
 		}
 		println("Downloading", item.Name)
-		err = DownloadFile(conn, serverPath, item.Name)
+		err = DownloadFile(fcon, serverPath, item.Name)
 		if err != nil {
 			fail++
 			println(err.Error())
@@ -148,8 +169,11 @@ func DownloadFiles(conn *ftp.ServerConn, serverPath string, limit ...int) (succe
 	}
 	return
 }
-func DownloadFile(conn *ftp.ServerConn, serverPath, destName string) error {
-	data, err := DownloadFileBuffer(conn, filepath.Join(serverPath, destName))
+func DownloadFile(fcon FTPConn, serverPath, destName string) error {
+	if fcon.Conn == nil {
+		return rerr.New("Provided ftp connection is invalid. Did you use the NewFTPConn() function?")
+	}
+	data, err := DownloadFileBuffer(fcon, filepath.Join(serverPath, destName))
 	if err != nil {
 		return err
 	}
@@ -161,9 +185,12 @@ func DownloadFile(conn *ftp.ServerConn, serverPath, destName string) error {
 }
 
 // Download file from server as []byte
-func DownloadFileBuffer(conn *ftp.ServerConn, serverPath string) (fileData []byte, err error) {
+func DownloadFileBuffer(fcon FTPConn, serverPath string) (fileData []byte, err error) {
+	if fcon.Conn == nil {
+		return fileData, rerr.New("Provided ftp connection is invalid. Did you use the NewFTPConn() function?")
+	}
 	println("Downloading", serverPath, "to buffer")
-	resp, err := conn.Retr(serverPath)
+	resp, err := fcon.Conn.Retr(serverPath)
 	if err != nil {
 		return nil, rerr.Wrap(err, "Error downloading file from server", "remote_file", serverPath)
 	}
